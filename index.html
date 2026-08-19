@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>Stopky – měření jednoho člověka</title>
+<style>
+:root{--bg:#eef2f7;--card:#fff;--ink:#101828;--muted:#667085;--line:#d9e0ea;--blue:#1769e0;--green:#12834b;--red:#d63b3b;--dark:#172033;--soft:#f7f9fc}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.app{max-width:1050px;margin:0 auto;padding:22px 16px 45px}
+header{text-align:center;margin:6px 0 18px}
+h1{font-size:clamp(28px,5vw,44px);margin:0 0 5px}
+.subtitle{color:var(--muted);margin:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 35px rgba(16,24,40,.07);padding:20px;margin:14px 0}
+.form{display:grid;grid-template-columns:1fr 220px;gap:12px}
+label{display:block;font-size:13px;font-weight:700;color:#475467;margin-bottom:6px}
+input{width:100%;border:1px solid var(--line);border-radius:11px;padding:13px 14px;font:inherit;outline:none;background:#fff}
+input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(23,105,224,.12)}
+.timer{text-align:center;font-variant-numeric:tabular-nums;font-size:clamp(58px,13vw,112px);font-weight:800;letter-spacing:.02em;line-height:1;margin:25px 0 12px}
+.status{text-align:center;color:var(--muted);min-height:22px;margin-bottom:18px}
+.controls{display:grid;grid-template-columns:1fr 1.35fr 1fr;gap:12px}
+button{border:0;border-radius:15px;min-height:66px;padding:14px 18px;font:inherit;font-weight:800;cursor:pointer;touch-action:manipulation;transition:.12s}
+button:active:not(:disabled){transform:scale(.98)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.start{background:var(--green);color:white}.lap{background:var(--blue);color:white;font-size:1.15em}.stop{background:var(--red);color:white}
+.secondary{background:#e9edf3;color:var(--ink)}.excel{background:#087f3e;color:white}.new{background:var(--dark);color:white}
+.actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:12px}
+.topline{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+h2{margin:0;font-size:20px}.count{color:var(--muted);font-size:14px}
+.tablewrap{overflow:auto;border:1px solid var(--line);border-radius:13px;margin-top:14px}
+table{width:100%;border-collapse:collapse;min-width:570px;font-variant-numeric:tabular-nums}
+th,td{padding:13px 15px;border-bottom:1px solid var(--line);text-align:right}
+th:first-child,td:first-child{text-align:center}
+th{background:var(--soft);font-size:13px;color:#475467}
+tr:last-child td{border-bottom:0}
+.empty{text-align:center;color:var(--muted);padding:28px}
+.note{margin-top:13px;background:#f7f9fc;border-left:4px solid var(--blue);padding:12px 14px;border-radius:8px;color:#475467;font-size:14px}
+@media(max-width:700px){.form,.controls,.actions{grid-template-columns:1fr}.app{padding:14px 10px 35px}.card{padding:15px;border-radius:15px}.timer{margin:22px 0}.controls button{min-height:70px}.lap{order:-1}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+<h1>Stopky</h1>
+<p class="subtitle">Měření jednoho člověka • mezičasy • Excel</p>
+</header>
+
+<section class="card">
+<div class="form">
+<div><label for="person">Jméno měřeného</label><input id="person" placeholder="Např. Jan Novák" autocomplete="name"></div>
+<div><label for="date">Datum</label><input id="date" type="date"></div>
+</div>
+
+<div id="timer" class="timer">00:00:00.000</div>
+<div id="status" class="status">Připraveno ke startu</div>
+
+<div class="controls">
+<button id="start" class="start">▶ START</button>
+<button id="lap" class="lap" disabled>⏱ MEZIČAS</button>
+<button id="stop" class="stop" disabled>■ STOP</button>
+</div>
+
+<div class="actions">
+<button id="reset" class="secondary">↺ Reset měření</button>
+<button id="excel" class="excel">📊 Stáhnout Excel</button>
+<button id="new" class="new">＋ Nové měření</button>
+</div>
+
+<div class="note">Klávesnice: <b>mezerník</b> = start/stop, <b>L</b> = mezičas, <b>R</b> = reset. Na telefonu používej velké tlačítko <b>MEZIČAS</b>.</div>
+</section>
+
+<section class="card">
+<div class="topline"><h2>Mezičasy</h2><span id="count" class="count">0 záznamů</span></div>
+<div class="tablewrap">
+<table>
+<thead><tr><th>#</th><th>Mezičas</th><th>Čas od startu</th></tr></thead>
+<tbody id="body"><tr><td colspan="3" class="empty">Zatím žádný mezičas.</td></tr></tbody>
+</table>
+</div>
+</section>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const timer=$('timer'),status=$('status'),body=$('body'),count=$('count');
+const startBtn=$('start'),lapBtn=$('lap'),stopBtn=$('stop'),resetBtn=$('reset'),excelBtn=$('excel'),newBtn=$('new');
+const person=$('person'),dateInput=$('date');
+let running=false,startPerf=0,elapsed=0,laps=[],raf=null;
+
+function today(){return new Date().toISOString().slice(0,10)}
+dateInput.value=today();
+
+function fmt(ms){
+ ms=Math.max(0,ms);
+ const h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),x=Math.floor(ms%1000);
+ return [h,m,s].map((v,i)=>String(v).padStart(i===0?2:2,'0')).join(':')+'.'+String(x).padStart(3,'0');
+}
+function nowMs(){return running?elapsed+(performance.now()-startPerf):elapsed}
+function tick(){timer.textContent=fmt(nowMs());if(running)raf=requestAnimationFrame(tick)}
+function state(){startBtn.disabled=running;lapBtn.disabled=!running;stopBtn.disabled=!running}
+function save(){
+ localStorage.setItem('stopky_state',JSON.stringify({person:person.value,date:dateInput.value,running:false,elapsed:nowMs(),laps}));
+}
+function render(){
+ count.textContent=`${laps.length} ${laps.length===1?'záznam':laps.length<5?'záznamy':'záznamů'}`;
+ body.innerHTML=laps.length?laps.map(x=>`<tr><td>${x.n}</td><td>${fmt(x.split)}</td><td>${fmt(x.total)}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">Zatím žádný mezičas.</td></tr>';
+}
+function start(){
+ if(running)return;
+ startPerf=performance.now();running=true;status.textContent='Měření probíhá…';state();tick();
+}
+function stop(){
+ if(!running)return;
+ elapsed=nowMs();running=false;cancelAnimationFrame(raf);timer.textContent=fmt(elapsed);status.textContent='Měření zastaveno';state();save();
+}
+function lap(){
+ if(!running)return;
+ const total=nowMs(),prev=laps.length?laps[laps.length-1].total:0;
+ laps.push({n:laps.length+1,split:total-prev,total});render();save();
+}
+function reset(){
+ running=false;cancelAnimationFrame(raf);elapsed=0;laps=[];timer.textContent='00:00:00.000';status.textContent='Připraveno ke startu';state();render();save();
+}
+function newMeasurement(){
+ if((running||laps.length)&&!confirm('Opravdu začít nové měření? Aktuální údaje budou vymazány.'))return;
+ person.value='';dateInput.value=today();reset();person.focus();
+}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]))}
+function colText(v){return esc(v).replace(/\t/g,' ')}
+function downloadXlsx(){
+ if(!laps.length){alert('Nejdříve zaznamenejte alespoň jeden mezičas.');return}
+ const rows=[
+ ['Měření stopkami'],['Měřený člověk',person.value||'Neuvedeno'],['Datum',dateInput.value||today()],[],
+ ['Číslo','Mezičas','Čas od startu'],
+ ...laps.map(x=>[x.n,fmt(x.split),fmt(x.total)])
+ ];
+ const sheetRows=rows.map((r,ri)=>'<row>'+r.map((v,ci)=>`<c r="${String.fromCharCode(65+ci)}${ri+1}" t="inlineStr"><is><t>${colText(v)}</t></is></c>`).join('')+'</row>').join('');
+ const sheet=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetRows}</sheetData></worksheet>`;
+ const types=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`;
+ const rels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+ const wb=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Mezičasy" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+ const wbrels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`;
+ const zip=new ZipWriter();
+ zip.add('[Content_Types].xml',types);zip.add('_rels/.rels',rels);zip.add('xl/workbook.xml',wb);zip.add('xl/_rels/workbook.xml.rels',wbrels);zip.add('xl/worksheets/sheet1.xml',sheet);
+ const blob=new Blob([zip.finish()],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+ const safe=(person.value||'mereni').trim().replace(/[^a-zA-Z0-9À-ž_-]+/g,'_');
+ a.download=`stopky_${safe}_${dateInput.value||today()}.xlsx`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+class ZipWriter{
+ constructor(){this.files=[]}
+ crc32(buf){let c=-1;for(let i=0;i<buf.length;i++){c^=buf[i];for(let k=0;k<8;k++)c=(c>>>1)^(- (c&1)&0xedb88320)}return (c^-1)>>>0}
+ u32(n){return new Uint8Array([n&255,n>>>8&255,n>>>16&255,n>>>24&255])}
+ add(name,text){const data=new TextEncoder().encode(text),crc=this.crc32(data);this.files.push({name,data,crc})}
+ finish(){
+  const enc=new TextEncoder(),parts=[],central=[];let offset=0;
+  for(const f of this.files){const nb=enc.encode(f.name),head=new Uint8Array(30+nb.length);let d=new DataView(head.buffer);
+   d.setUint32(0,0x04034b50,true);d.setUint16(4,20,true);d.setUint16(8,0,true);d.setUint32(18,f.crc,true);d.setUint32(22,f.data.length,true);d.setUint32(26,f.data.length,true);d.setUint16(28,nb.length,true);head.set(nb,30);parts.push(head,f.data);
+   const ch=new Uint8Array(46+nb.length);d=new DataView(ch.buffer);d.setUint32(0,0x02014b50,true);d.setUint16(4,20,true);d.setUint16(6,20,true);d.setUint16(10,0,true);d.setUint32(16,f.crc,true);d.setUint32(20,f.data.length,true);d.setUint32(24,f.data.length,true);d.setUint16(28,nb.length,true);d.setUint32(42,offset,true);ch.set(nb,46);central.push(ch);offset+=head.length+f.data.length;
+  }
+  const centralOffset=offset,centralSize=central.reduce((a,x)=>a+x.length,0),end=new Uint8Array(22);let d=new DataView(end.buffer);
+  d.setUint32(0,0x06054b50,true);d.setUint16(8,this.files.length,true);d.setUint16(10,this.files.length,true);d.setUint32(12,centralSize,true);d.setUint32(16,centralOffset,true);
+  return new Blob([...parts,...central,end],{type:'application/octet-stream'});
+ }
+}
+startBtn.onclick=start;stopBtn.onclick=stop;lapBtn.onclick=lap;resetBtn.onclick=reset;newBtn.onclick=newMeasurement;excelBtn.onclick=downloadXlsx;
+[person,dateInput].forEach(x=>x.addEventListener('input',save));
+document.addEventListener('keydown',e=>{
+ if(e.target.matches('input'))return;
+ if(e.code==='Space'){e.preventDefault();running?stop():start()}
+ else if(e.key.toLowerCase()==='l')lap();
+ else if(e.key.toLowerCase()==='r')reset();
+});
+try{
+ const s=JSON.parse(localStorage.getItem('stopky_state')||'null');
+ if(s){person.value=s.person||'';dateInput.value=s.date||today();elapsed=s.elapsed||0;laps=s.laps||[];timer.textContent=fmt(elapsed);render()}
+}catch(e){}
+state();render();
+</script>
+</body>
+</html>
