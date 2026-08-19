@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stopky</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#101828;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:1050px;margin:auto;padding:18px 12px 40px}.card{background:#fff;border:1px solid #d9e0ea;border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 10px 30px #10182812}
+h1{text-align:center;margin:0 0 5px;font-size:clamp(30px,6vw,46px)}.sub{text-align:center;color:#667085;margin:0 0 18px}
+.form{display:grid;grid-template-columns:1.3fr .7fr .7fr;gap:12px}.form2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+label{display:block;font-size:13px;font-weight:700;margin-bottom:5px;color:#475467}input{width:100%;padding:12px;border:1px solid #d9e0ea;border-radius:10px;font:inherit}
+.timer{text-align:center;font-size:clamp(52px,13vw,108px);font-weight:800;line-height:1;margin:25px 0 10px;font-variant-numeric:tabular-nums}.status{text-align:center;color:#667085;min-height:22px;margin-bottom:15px}
+.controls,.actions{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:10px}.actions{grid-template-columns:1fr 1fr 1fr;margin-top:10px}
+button{border:0;border-radius:14px;min-height:64px;padding:12px;font:inherit;font-weight:800;cursor:pointer}.start{background:#12834b;color:#fff}.lap{background:#1769e0;color:#fff;font-size:1.1em}.stop{background:#d63b3b;color:#fff}.secondary{background:#e9edf3}.excel{background:#087f3e;color:#fff}.new{background:#172033;color:#fff}button:disabled{opacity:.4}
+.top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}h2{margin:0;font-size:20px}.count{color:#667085}
+.table{overflow:auto;border:1px solid #d9e0ea;border-radius:12px;margin-top:12px}table{border-collapse:collapse;min-width:100%;font-variant-numeric:tabular-nums}th,td{padding:12px 15px;border-bottom:1px solid #d9e0ea;text-align:center;white-space:nowrap}th{background:#f7f9fc;color:#475467;font-size:13px}
+.info{margin-top:12px;padding:11px 13px;background:#f7f9fc;border-left:4px solid #1769e0;border-radius:7px;color:#475467;font-size:14px}
+@media(max-width:750px){.form,.form2,.controls,.actions{grid-template-columns:1fr}.lap{order:-1}}
+</style>
+</head>
+<body><main>
+<h1>Stopky</h1><p class="sub">Měření jednoho člověka • automatické rozdělení mezičasů do kolonek</p>
+
+<section class="card">
+<div class="form">
+<div><label>Měřený člověk</label><input id="person" placeholder="Např. Jan Novák"></div>
+<div><label>Datum</label><input id="date" type="date"></div>
+<div><label>Mezičasů v jedné kolonce</label><input id="per" type="number" min="1" max="100" value="3"></div>
+</div>
+<div class="form2">
+<div><label>Název první kolonky</label><input id="first" value="1. série"></div>
+<div><label>Automatické další kolonky</label><input value="2. série, 3. série, 4. série…" disabled></div>
+</div>
+<div id="timer" class="timer">00:00:00.000</div>
+<div id="status" class="status">Nastav počet mezičasů v jedné kolonce a spusť měření.</div>
+<div class="controls">
+<button id="start" class="start">▶ START</button><button id="lap" class="lap" disabled>⏱ MEZIČAS</button><button id="stop" class="stop" disabled>■ STOP</button>
+</div>
+<div class="actions">
+<button id="reset" class="secondary">↺ Reset</button><button id="excel" class="excel">📊 Stáhnout Excel</button><button id="new" class="new">＋ Nové měření</button>
+</div>
+<div class="info">Např. nastavíš <b>3</b>. Mezičasy 1–3 se zapíšou pod první kolonku, 4–6 pod druhou, 7–9 pod třetí atd. Počet i název první kolonky se nastavuje před měřením.</div>
+</section>
+
+<section class="card">
+<div class="top"><h2>Náhled tabulky</h2><span id="count" class="count">0 mezičasů</span></div>
+<div class="table"><table><thead id="head"></thead><tbody id="rows"></tbody></table></div>
+</section>
+</main>
+<script>
+const $=x=>document.getElementById(x),timer=$('timer'),status=$('status'),head=$('head'),rows=$('rows'),count=$('count');
+const startBtn=$('start'),lapBtn=$('lap'),stopBtn=$('stop'),resetBtn=$('reset'),excelBtn=$('excel'),newBtn=$('new');
+let running=false,start=0,elapsed=0,laps=[],raf=0;
+$('date').value=new Date().toISOString().slice(0,10);
+
+function fmt(ms){let h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=Math.floor(ms%1000);return [h,m,s].map(x=>String(x).padStart(2,'0')).join(':')+'.'+String(z).padStart(3,'0')}
+function now(){return running?elapsed+performance.now()-start:elapsed}
+function tick(){timer.textContent=fmt(now());if(running)raf=requestAnimationFrame(tick)}
+function name(i){let b=$('first').value.trim()||'1. série',m=b.match(/^(.*?)(\d+)\s*$/);return i===0?b:m?m[1]+(Number(m[2])+i):b+' '+(i+1)}
+function render(){
+ let n=Math.max(1,parseInt($('per').value)||3),cols=Math.max(1,Math.ceil(Math.max(laps.length,1)/n));
+ head.innerHTML='<tr>'+Array.from({length:cols},(_,i)=>'<th>'+name(i)+'</th>').join('')+'</tr>';
+ let out='';for(let r=0;r<n;r++){out+='<tr>';for(let c=0;c<cols;c++){let x=laps[c*n+r];out+='<td>'+(x?fmt(x.split):'—')+'</td>'}out+='</tr>'}rows.innerHTML=out;
+ count.textContent=laps.length+' '+(laps.length==1?'mezičas':laps.length<5?'mezičasy':'mezičasů')
+}
+function state(){startBtn.disabled=running;lapBtn.disabled=!running;stopBtn.disabled=!running;for(let id of ['person','date','per','first'])$(id).disabled=running}
+function save(){localStorage.setItem('stopky_v2',JSON.stringify({person:$('person').value,date:$('date').value,per:$('per').value,first:$('first').value,elapsed:now(),laps}))}
+function go(){if(running)return;start=performance.now();running=true;status.textContent='Měření probíhá…';state();tick()}
+function stop(){if(!running)return;elapsed=now();running=false;cancelAnimationFrame(raf);timer.textContent=fmt(elapsed);status.textContent='Měření zastaveno';state();save()}
+function lap(){if(!running)return;let total=now(),prev=laps.length?laps[laps.length-1].total:0;laps.push({split:total-prev,total});render();save()}
+function reset(){running=false;cancelAnimationFrame(raf);elapsed=0;laps=[];timer.textContent='00:00:00.000';status.textContent='Připraveno ke startu';state();render();save()}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]))}
+function col(c){let s='';c++;while(c){let r=(c-1)%26;s=String.fromCharCode(65+r)+s;c=Math.floor((c-1)/26)}return s}
+function exportXlsx(){
+ if(!laps.length)return alert('Nejdříve zaznamenejte alespoň jeden mezičas.');
+ let n=Math.max(1,parseInt($('per').value)||3),cols=Math.ceil(laps.length/n),data=[
+ ['Měření stopkami'],['Měřený člověk',$('person').value||'Neuvedeno'],['Datum',$('date').value],['Mezičasů v jedné kolonce',n],[],
+ Array.from({length:cols},(_,i)=>name(i))
+ ];
+ for(let r=0;r<n;r++)data.push(Array.from({length:cols},(_,c)=>laps[c*n+r]?fmt(laps[c*n+r].split):''));
+ data.push([],['Pořadí','Mezičas','Čas od startu']);laps.forEach((x,i)=>data.push([i+1,fmt(x.split),fmt(x.total)]));
+ let sheet='<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+data.map((row,r)=>'<row>'+row.map((v,c)=>'<c r="'+col(c)+(r+1)+'" t="inlineStr"><is><t>'+esc(v)+'</t></is></c>').join('')+'</row>').join('')+'</sheetData></worksheet>';
+ let types='<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>';
+ let rel='<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+ let wb='<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Měření" sheetId="1" r:id="rId1"/></sheets></workbook>';
+ let wr='<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>';
+ let z=new Zip();z.add('[Content_Types].xml',types);z.add('_rels/.rels',rel);z.add('xl/workbook.xml',wb);z.add('xl/_rels/workbook.xml.rels',wr);z.add('xl/worksheets/sheet1.xml',sheet);
+ let a=document.createElement('a');a.href=URL.createObjectURL(z.blob());a.download='stopky_'+($('date').value||'mereni')+'.xlsx';a.click()
+}
+class Zip{
+ constructor(){this.f=[]}add(n,t){let d=new TextEncoder().encode(t),c=this.crc(d);this.f.push({n,d,c})}
+ crc(b){let c=-1;for(let x of b){c^=x;for(let i=0;i<8;i++)c=(c>>>1)^(-(c&1)&0xedb88320)}return(c^-1)>>>0}
+ blob(){let enc=new TextEncoder(),p=[],q=[],off=0;for(let f of this.f){let n=enc.encode(f.n),h=new Uint8Array(30+n.length),d=new DataView(h.buffer);d.setUint32(0,0x04034b50,true);d.setUint16(4,20,true);d.setUint32(18,f.c,true);d.setUint32(22,f.d.length,true);d.setUint32(26,f.d.length,true);d.setUint16(28,n.length,true);h.set(n,30);p.push(h,f.d);let c=new Uint8Array(46+n.length),v=new DataView(c.buffer);v.setUint32(0,0x02014b50,true);v.setUint16(4,20,true);v.setUint16(6,20,true);v.setUint32(16,f.c,true);v.setUint32(20,f.d.length,true);v.setUint32(24,f.d.length,true);v.setUint16(28,n.length,true);v.setUint32(42,off,true);c.set(n,46);q.push(c);off+=h.length+f.d.length}let co=off,cs=q.reduce((a,x)=>a+x.length,0),e=new Uint8Array(22),d=new DataView(e.buffer);d.setUint32(0,0x06054b50,true);d.setUint16(8,this.f.length,true);d.setUint16(10,this.f.length,true);d.setUint32(12,cs,true);d.setUint32(16,co,true);return new Blob([...p,...q,e],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})}
+}
+startBtn.onclick=go;stopBtn.onclick=stop;lapBtn.onclick=lap;resetBtn.onclick=reset;excelBtn.onclick=exportXlsx;newBtn.onclick=()=>{if(confirm('Začít nové měření a vymazat aktuální údaje?')){$('person').value='';$('date').value=new Date().toISOString().slice(0,10);$('per').value=3;$('first').value='1. série';reset()}};
+['per','first'].forEach(id=>$(id).oninput=render);['person','date','per','first'].forEach(id=>$(id).oninput=save);
+document.onkeydown=e=>{if(e.target.tagName==='INPUT')return;if(e.code==='Space'){e.preventDefault();running?stop():go()}if(e.key.toLowerCase()==='l')lap();if(e.key.toLowerCase()==='r')reset()};
+try{let s=JSON.parse(localStorage.getItem('stopky_v2'));if(s){$('person').value=s.person||'';$('date').value=s.date||$('date').value;$('per').value=s.per||3;$('first').value=s.first||'1. série';elapsed=s.elapsed||0;laps=s.laps||[];timer.textContent=fmt(elapsed)}}catch(e){}
+state();render();
+</script></body></html>
